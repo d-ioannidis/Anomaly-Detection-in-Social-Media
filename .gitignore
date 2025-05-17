@@ -1,0 +1,81 @@
+# -------------------
+# Operating System
+# -------------------
+# macOS
+.DS_Store
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# -------------------
+# Node.js
+# -------------------
+# dependencies
+/node_modules/
+/package-lock.json
+yarn.lock
+
+# build outputs
+/dist/
+/build/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# -------------------
+# Python
+# -------------------
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.$py.class
+**/__init__.py
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# -------------------
+# Java
+# -------------------
+# Compiled class files
+*.class
+
+# Package files
+*.jar
+*.war
+*.ear
+
+# Eclipse / IntelliJ
+*.iml
+.idea/
+.project
+.classpath
+.settings/
+
+# -------------------
+# IDE & Editor
+# -------------------
+# VS Code
+.vscode/
+# JetBrains
+*.iws
+*.ipr
+
+# -------------------
+# Miscellaneous
+# -------------------
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+*.zip
+*.csv
+
+# Temporary files
+*.tmp
+*.swp
