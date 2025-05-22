@@ -133,6 +133,18 @@ class DataPreprocessor:
         return self
     
     def bert_tokenize(self):
+        """
+        Tokenizes and generates BERT embeddings for the 'Tweets' column.
+
+        This method uses the BERT tokenizer and model to encode tweets into token embeddings.
+        It extracts the [CLS] token representation as the embedding for each tweet and stores
+        the result in the 'Embeddings' column of the data.
+
+        Returns
+        -------
+        numpy.ndarray
+            A 2D numpy array where each row corresponds to the BERT [CLS] embedding of a tweet.
+        """
         tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         model = BertModel.from_pretrained('bert-base-uncased')
         model.eval()  # Set to eval mode
