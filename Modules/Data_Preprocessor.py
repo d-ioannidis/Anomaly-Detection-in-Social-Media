@@ -2,6 +2,11 @@ from Data_Collector import DataCollector
 import spacy
 from nltk.stem import *
 from sklearn.feature_extraction.text import CountVectorizer
+import pandas as pd
+from transformers import BertTokenizer, BertModel
+import torch
+import numpy as np
+from sklearn.metrics import silhouette_score
 
 class DataPreprocessor:
     def __init__(self, data_collector: DataCollector):
@@ -42,7 +47,30 @@ class DataPreprocessor:
             return float(x)
     
     def preprocess_data(self):
+        """
+        Preprocesses the data by converting the Likes column to numeric, converting specified columns to lowercase, 
+        removing special characters and hashtags, performing tokenization and lemmatization, removing stop words, 
+        and using a stemmer to reduce words to their root form.
+
+        Returns
+        -------
+        DataPreprocessor
+            The preprocessed data object.
+        """
         def lower_if_string(x):
+            """
+            Converts a string or a list of strings to lowercase.
+
+            Parameters
+            ----------
+            x : str or list
+                The string or list of strings to be converted to lowercase.
+
+            Returns
+            -------
+            str or list
+                The converted string or list of strings.
+            """
             if isinstance(x, str):
                 return x.lower()
             elif isinstance(x, list):
@@ -85,6 +113,54 @@ class DataPreprocessor:
 
         return self
     
+    def one_hot_encode(self):
+        """
+        Performs one-hot encoding on the 'Disaster' column and adds it to the original data.
+
+        The one-hot encoded columns have the prefix 'Disaster' and are concatenated to the original data on the 1st axis.
+
+        Returns
+        -------
+        DataPreprocessor
+            The preprocessed data object.
+        """
+        self.data['Original_Disaster'] = self.data['Disaster']
+
+        disaster_one_hot = pd.get_dummies(self.data['Disaster'], prefix='Disaster')
+
+        self.data = pd.concat([self.data, disaster_one_hot], axis=1)
+
+        return self
+    
+    def bert_tokenize(self):
+        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        model = BertModel.from_pretrained('bert-base-uncased')
+        model.eval()  # Set to eval mode
+
+        # Generate BERT token embeddings
+        embeddings = []
+        for text in self.data['Tweets']:
+            inputs = tokenizer.encode_plus(
+                text,
+                add_special_tokens=True,
+                max_length=512,
+                truncation=True,
+                return_attention_mask=True,
+                return_tensors='pt'
+            )
+            with torch.no_grad():  # Disable gradient tracking
+                outputs = model(
+                    inputs['input_ids'],
+                    attention_mask=inputs['attention_mask']
+                )
+            # Get [CLS] token representation
+            cls_embedding = outputs.last_hidden_state[:, 0, :].squeeze().numpy()
+            embeddings.append(cls_embedding)
+
+        self.data['Embeddings'] = embeddings
+
+        return np.vstack(embeddings) # Return embeddings
+
     def calculate_document_term_matrix(self):
         """
         Calculates the document-term matrix using the preprocessed data.
