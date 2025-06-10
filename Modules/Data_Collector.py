@@ -12,6 +12,7 @@ class DataCollector:
             connection string, or a web API.
         """
         self.data_source = data_source
+        self.load_data()
 
     def load_data(self):
         """

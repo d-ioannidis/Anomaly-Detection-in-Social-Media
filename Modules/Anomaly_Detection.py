@@ -29,7 +29,13 @@ class AnomalyDetector:
         autoencoder_anomaly_detection(data, threshold=0.5)
             Uses an autoencoder to detect anomalies in the data.
         """
-        pass
+        self.hybrid_model = None
+        self.autoencoder = None
+        # Maintain model state across runs
+        self.dt = DecisionTreeClassifier(random_state=42)
+        self.svm = SVC(probability=True, kernel='linear', random_state=42)
+        self.nb = MultinomialNB()
+        self.suspect_features = {}
 
     def kmeans_anomaly_detection(self, data, n_clusters=5):
         """
@@ -83,7 +89,7 @@ class AnomalyDetector:
 
         return anomalies
     
-    def autoencoder_anomaly_detection(self, data, threshold=0.5):
+    def autoencoder_anomaly_detection(self, data, threshold=0.5, retrain=False):
         """
         Uses an autoencoder to detect anomalies in the data.
 
@@ -106,21 +112,38 @@ class AnomalyDetector:
             A boolean array where True values indicate anomalies and False values 
             indicate normal data points.
         """
-        # Convert sparse matrix to dense matrix
-        if sparse.issparse(data):
+        # Convert sparse matrix to dense array
+        if isinstance(data, sparse.csr.csr_matrix):
             data = data.toarray()
 
+        # Determine input dimension from data
         input_dim = data.shape[1]
         encoding_dim = 128
 
-        autoencoder = keras.Sequential([
-            keras.layers.Input(shape=(input_dim,)),
-            keras.layers.Dense(encoding_dim, activation="relu"),
-            keras.layers.Dense(input_dim, activation="sigmoid")
-        ])
-        autoencoder.compile(optimizer='adam', loss='mse')
-        autoencoder.fit(data, data, epochs=20, batch_size=32, verbose=1)
+        # Grab the model's expected input in a safe manner
+        if self.autoencoder is not None:
+            model_input = getattr(self.autoencoder, 'input_shape', None)
+            if model_input:
+                expected_dim = model_input[1]
+            else:
+                expected_dim = self.autoencoder.layers[0].batch_input_shape[1]
+        else:
+            expected_dim = None
+        
+        need_retrain = retrain or (expected_dim != input_dim)
 
+        if need_retrain:
+            autoencoder = keras.Sequential([
+                keras.layers.Input(shape=(input_dim,)),
+                keras.layers.Dense(encoding_dim, activation='relu'),
+                keras.layers.Dense(input_dim, activation='sigmoid')
+            ])
+
+            autoencoder.compile(optimizer='adam', loss='mse')
+            autoencoder.fit(data, data, epochs=20, batch_size=32, verbose=1)
+        else:
+            autoencoder = self.autoencoder
+            
         recon = autoencoder.predict(data)
         mse = ((data - recon) ** 2).mean(axis=1)
         threshold = np.percentile(mse, 95)
@@ -177,3 +200,26 @@ class AnomalyDetector:
         anomalies = anomaly_score > threshold
 
         return anomalies
+    
+    def cache_suspect_features(self, feature_name, features, suspect_idx):
+        """
+        Caches the suspect features of a given feature name for future reference.
+
+        Parameters
+        ----------
+        feature_name : str
+            The name of the feature to cache.
+        features : array-like of shape (n_samples,)
+            The values of the specified feature.
+        suspect_idx : array-like of shape (n_samples,)
+            A boolean array indicating which samples are suspected anomalies.
+
+        Returns
+        -------
+        None
+        """
+
+        if feature_name not in self.suspect_features:
+            self.suspect_features[feature_name] = []
+        
+        self.suspect_features[feature_name].append(features[suspect_idx])

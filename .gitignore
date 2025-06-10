@@ -79,3 +79,8 @@ env/
 # Temporary files
 *.tmp
 *.swp
+
+# -------------------
+# Environment files
+# -------------------
+.env
