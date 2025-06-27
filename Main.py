@@ -1,5 +1,4 @@
 from PipelineManager import PipelineManager
-import pandas as pd
 
 config = {
     "data_source": "DisasterTweets.csv"
@@ -12,3 +11,7 @@ verification = pipeline.run()
 if hasattr(pipeline, 'fact-checker'):
     results = pipeline.fact_checker.load_fact_check_results()
     print("Loaded fact-check results:", results)
+
+print("Verification results:")
+for model in verification:
+    print(model, verification[model])

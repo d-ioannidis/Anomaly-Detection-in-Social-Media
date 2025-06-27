@@ -76,3 +76,5 @@ class PipelineManager:
         )
 
         verification = feedback.update_system()
+
+        return verification

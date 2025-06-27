@@ -6,6 +6,7 @@ from sklearn.model_selection import train_test_split
 import scipy.sparse as sparse
 import numpy as np
 import keras
+import pandas as pd
 
 class AnomalyDetector:
     def __init__(self):
@@ -29,7 +30,6 @@ class AnomalyDetector:
         autoencoder_anomaly_detection(data, threshold=0.5)
             Uses an autoencoder to detect anomalies in the data.
         """
-        self.hybrid_model = None
         self.autoencoder = None
         # Maintain model state across runs
         self.dt = DecisionTreeClassifier(random_state=42)
@@ -89,7 +89,7 @@ class AnomalyDetector:
 
         return anomalies
     
-    def autoencoder_anomaly_detection(self, data, threshold=0.5, retrain=False):
+    def autoencoder_anomaly_detection(self, data, encoding_dim = 128, threshold=0.5, force_retrain=False):
         """
         Uses an autoencoder to detect anomalies in the data.
 
@@ -118,21 +118,15 @@ class AnomalyDetector:
 
         # Determine input dimension from data
         input_dim = data.shape[1]
-        encoding_dim = 128
 
-        # Grab the model's expected input in a safe manner
-        if self.autoencoder is not None:
-            model_input = getattr(self.autoencoder, 'input_shape', None)
-            if model_input:
-                expected_dim = model_input[1]
-            else:
-                expected_dim = self.autoencoder.layers[0].batch_input_shape[1]
-        else:
-            expected_dim = None
-        
-        need_retrain = retrain or (expected_dim != input_dim)
+        old_autoencoder = self.autoencoder
+        shape_mismatch = False
 
-        if need_retrain:
+        if old_autoencoder is not None:
+            expected = old_autoencoder.input_shape
+            shape_mismatch = (expected[-1] != input_dim)
+
+        if force_retrain or old_autoencoder is None or shape_mismatch:
             autoencoder = keras.Sequential([
                 keras.layers.Input(shape=(input_dim,)),
                 keras.layers.Dense(encoding_dim, activation='relu'),
@@ -140,7 +134,15 @@ class AnomalyDetector:
             ])
 
             autoencoder.compile(optimizer='adam', loss='mse')
-            autoencoder.fit(data, data, epochs=20, batch_size=32, verbose=1)
+            autoencoder.fit(
+                data, 
+                data, 
+                epochs=20, 
+                batch_size=32, 
+                verbose=1
+            )
+
+            self.autoencoder = autoencoder
         else:
             autoencoder = self.autoencoder
             
@@ -219,7 +221,23 @@ class AnomalyDetector:
         None
         """
 
-        if feature_name not in self.suspect_features:
+        if feature_name in ('tfidf', 'dtm', 'bert'):
+            if sparse.issparse(features): # If the features are sparse
+                full_matrix = features.toarray() # Convert to dense array
+            elif hasattr(features, 'values'): # If the features are a pandas DataFrame
+                full_matrix = features.values # Convert to numpy array
+            else: # If the features are a numpy array
+                full_matrix = np.array(features) # Keep it as is
+            
+            self.suspect_features[feature_name] = [full_matrix]
+
+            return
+        elif feature_name not in self.suspect_features:
             self.suspect_features[feature_name] = []
         
-        self.suspect_features[feature_name].append(features[suspect_idx])
+        if isinstance(features, pd.DataFrame):
+            selected = features.iloc[suspect_idx]
+        else:
+            selected = features[suspect_idx]
+
+        self.suspect_features[feature_name].append(selected)

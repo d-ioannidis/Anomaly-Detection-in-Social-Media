@@ -199,6 +199,10 @@ class DataPreprocessor:
         self.data['Token_String'] = self.data['Tokens'].apply(lambda toks: " ".join(toks))
 
         vectorizer = CountVectorizer()
-        tfidf = vectorizer.fit_transform(self.data['Token_String'])
+        tfidf_matrix = vectorizer.fit_transform(self.data['Token_String'])
 
-        return tfidf
+        tfidf_df = pd.DataFrame(tfidf_matrix.toarray(),
+                                index=self.data.index,
+                                columns=vectorizer.get_feature_names_out())
+
+        return tfidf_df
