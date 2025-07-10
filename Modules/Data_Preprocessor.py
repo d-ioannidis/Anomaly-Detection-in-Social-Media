@@ -1,4 +1,5 @@
 from Data_Collector import DataCollector
+from NLP_Engine import NLPEngine
 import spacy
 from nltk.stem import *
 from sklearn.feature_extraction.text import CountVectorizer
@@ -6,7 +7,6 @@ import pandas as pd
 from transformers import BertTokenizer, BertModel
 import torch
 import numpy as np
-from sklearn.metrics import silhouette_score
 
 class DataPreprocessor:
     def __init__(self, data_collector: DataCollector):
@@ -28,6 +28,7 @@ class DataPreprocessor:
 
         self.data_collector = data_collector
         self.data = data_collector.get_structured_data()
+        self.nlp_engine = NLPEngine()
 
     def convert_to_numeric(self, x):
         """
@@ -111,6 +112,22 @@ class DataPreprocessor:
         stemmer = PorterStemmer()
         self.data['Tokens'] = self.data['Tokens'].apply(lambda x: [stemmer.stem(token) for token in x])
 
+        self.data['Sentiment_Scores'] = self.data['Original Tweets'].apply(
+            lambda x: self.nlp_engine.get_sentiment_scores(x)
+        )
+
+        self.data['Emotion_Labels'] = self.data['Original Tweets'].apply(
+            lambda x: self.nlp_engine.get_emotion_labels(x) 
+        )
+
+        self.data['Sentiment_Label'] = self.data['Sentiment_Scores'].apply(
+            lambda x: x[0]['label'] if x else None
+        )
+
+        self.data['Sentiment_Score'] = self.data['Sentiment_Scores'].apply(
+            lambda x: x[0]['score'] if x else None
+        )
+
         return self
     
     def one_hot_encode(self):
@@ -125,9 +142,7 @@ class DataPreprocessor:
             The preprocessed data object.
         """
         self.data['Original_Disaster'] = self.data['Disaster']
-
         disaster_one_hot = pd.get_dummies(self.data['Disaster'], prefix='Disaster')
-
         self.data = pd.concat([self.data, disaster_one_hot], axis=1)
 
         return self
@@ -149,6 +164,10 @@ class DataPreprocessor:
         model = BertModel.from_pretrained('bert-base-uncased')
         model.eval()  # Set to eval mode
 
+        # Move model to device if GPU is available
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+
         # Generate BERT token embeddings
         embeddings = []
         for text in self.data['Tweets']:
@@ -160,6 +179,10 @@ class DataPreprocessor:
                 return_attention_mask=True,
                 return_tensors='pt'
             )
+
+            # Move inputs to device
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+
             with torch.no_grad():  # Disable gradient tracking
                 outputs = model(
                     inputs['input_ids'],

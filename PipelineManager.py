@@ -7,6 +7,7 @@ from Anomaly_Detection import AnomalyDetector
 from Fact_Checker import FactChecker
 from Feedback import Feedback
 import numpy as np
+import pandas as pd
 
 class PipelineManager:
     def __init__(self, config):
@@ -24,6 +25,15 @@ class PipelineManager:
         embeddings = self.preprocessor.bert_tokenize()
         dtm = self.preprocessor.calculate_document_term_matrix()
         tfidf = self.preprocessor.calculate_term_frequency_inverse_document_frequency_matrix()
+
+        # Access and display sentiment and emotion scores from the preprocessed data
+        sentiment_labels = self.preprocessor.data['Sentiment_Label'].values
+        sentiment_scores = self.preprocessor.data['Sentiment_Score'].values
+        emotion_scores = self.preprocessor.data['Emotion_Labels'].values
+        
+        print("Sentiment Scores:", sentiment_scores)
+        print("Sentiment Labels:", sentiment_labels)
+        print("Emotion Scores:", emotion_scores)
 
         #3. Anomaly Detection
         anomaly_results = {
@@ -53,19 +63,41 @@ class PipelineManager:
         }
 
         for arr in anomaly_results_list:
-            suspect_idx.extend(np.where(arr)[0])
+            if isinstance(arr, np.ndarray) and arr.dtype == bool:
+                suspect_idx.extend(np.where(arr)[0])
+            elif isinstance(arr, pd.Series):
+                suspect_idx.extend(arr[arr].index.tolist())
+            else:
+                print(f"Warning: Anomaly detection result not a boolean array/Series: {type(arr)}")
 
-        suspects = self.preprocessor.data.iloc[suspect_idx]
+        suspect_idx = list(set(suspect_idx))
+
+        valid_suspect_idx = [idx for idx in suspect_idx if idx < len(self.preprocessor.data)]
+        suspects = self.preprocessor.data.iloc[valid_suspect_idx]
 
         for name, matrix in feature_types.items():
-            self.anomaly_detector.cache_suspect_features(name, 
-                                                         matrix, 
-                                                         suspect_idx
+            if hasattr(matrix, 'tocoo'):
+                matrix_for_caching = matrix.toarray()
+            else: 
+                matrix_for_caching = matrix
+            
+            if isinstance(matrix_for_caching, np.ndarray):
+                suspect_features = matrix_for_caching[valid_suspect_idx]
+            else:
+                suspect_features = matrix_for_caching.iloc[valid_suspect_idx]
+
+            self.anomaly_detector.cache_suspect_features(
+                name, 
+                suspect_features, 
+                suspect_idx
             )
 
         #4. Fact-check auto
         if not os.path.isfile('fact_check_results.csv'):
             verification = self.fact_checker.fact_check_tweets(suspects)
+        else:
+            print("Skipping automatic fact-checking: 'fact_check_results.csv' already exists.")
+            verification = pd.read_csv('fact_check_results.csv')
 
         #5. Feedback
         feedback = Feedback(
@@ -75,6 +107,7 @@ class PipelineManager:
             self.preprocessor
         )
 
-        verification = feedback.update_system()
-
-        return verification
+        if 'verification' in locals():
+            return verification
+        else:
+            return {}
