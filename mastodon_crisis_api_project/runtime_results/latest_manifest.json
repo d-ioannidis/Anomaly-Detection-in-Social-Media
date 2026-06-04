@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-05-06T09:28:44.744014+00:00",
+  "input_csv": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\mastodon_crisis_api_project\\runtime_data\\evacuation_order_120.csv",
+  "results_keys": [
+    "anomaly_results",
+    "output_files"
+  ],
+  "output_files": {
+    "anomaly_scores": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\mastodon_crisis_api_project\\anomaly_scores.csv",
+    "fact_check_results": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\mastodon_crisis_api_project\\fact_check_results.csv",
+    "anomaly_results": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\mastodon_crisis_api_project\\anomaly_results.csv",
+    "sentiment_emotion_scores": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\mastodon_crisis_api_project\\sentiment_emotion_scores.csv"
+  }
+}

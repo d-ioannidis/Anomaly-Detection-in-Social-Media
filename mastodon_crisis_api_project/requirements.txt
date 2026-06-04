@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+python-dotenv
+pandas
+requests
+scikit-learn
+numpy
+tensorflow
+keras
+torch
+transformers
+spacy
+nltk
+beautifulsoup4

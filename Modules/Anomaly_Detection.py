@@ -1,7 +1,8 @@
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.svm import SVC
+from sklearn.svm import LinearSVC
 from sklearn.naive_bayes import MultinomialNB
+from sklearn.neighbors import NearestNeighbors
 from sklearn.model_selection import train_test_split
 import scipy.sparse as sparse
 import numpy as np
@@ -33,35 +34,111 @@ class AnomalyDetector:
         self.autoencoder = None
         # Maintain model state across runs
         self.dt = DecisionTreeClassifier(random_state=42)
-        self.svm = SVC(probability=True, kernel='linear', random_state=42)
+        self.svm = LinearSVC(random_state=42)
         self.nb = MultinomialNB()
         self.suspect_features = {}
+        self.thresholds = {
+            'kmeans': 97.5,
+            'autoencoder': 97.5,
+            'hybrid': 97.5
+        }
+        self.target_alert_rate = 0.03   # desired anomaly proportion
+        self.min_percentile = 90.0
+        self.max_percentile = 99.5
 
-    def kmeans_anomaly_detection(self, data, n_clusters=5):
+    def _score_to_flags(self, scores, model_name):
         """
-        Uses k-means clustering to detect anomalies in the data.
+        Converts anomaly scores to flags based on a percentile threshold.
+
+        Parameters
+        ----------
+        scores : array-like of shape (n_samples,)
+            The anomaly scores to convert to flags.
+        model_name : str
+            The name of the model generating the anomaly scores.
+
+        Returns
+        -------
+        flags : array-like of shape (n_samples,)
+            Boolean indicators of anomalies.
+        cutoff : float
+            The threshold used to determine anomalies.
+        """
+        percentile = self.thresholds.get(model_name, 95.0)
+        cutoff = np.percentile(scores, percentile)
+        return (scores > cutoff).astype(int), cutoff
+    
+    def estimate_dbscan_eps(self, data, min_samples=5, quantile=0.98):
+        """
+        Estimates the optimal epsilon value for DBSCAN clustering.
 
         Parameters
         ----------
         data : array-like of shape (n_samples, n_features)
-            The input data to detect anomalies from.
-        n_clusters : int, optional (default=5)
-            The number of clusters to form and the number of centroids to generate.
+            The input data to estimate the optimal epsilon value from.
+        min_samples : int, optional (default=5)
+            The minimum number of samples required to form a dense region.
+        quantile : float, optional (default=0.98)
+            The percentile of the k-th nearest neighbor distances to use as the optimal epsilon value.
 
         Returns
         -------
-        anomalies : array-like of shape (n_samples, )
-            A boolean array where True values indicate anomalies and False values indicate normal data points.
+        float
+            The estimated optimal epsilon value for DBSCAN clustering.
         """
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42).fit(data)
+        if hasattr(data, "toarray"):
+            data_dense = data.toarray()
+        else:
+            data_dense = np.asarray(data)
 
-        distances = np.linalg.norm(data - kmeans.cluster_centers_[kmeans.labels_], axis=1)
-        threshold = np.percentile(distances, 95)
-        anomalies = distances > threshold
+        n_samples = len(data_dense)
+        if n_samples == 0:
+            raise ValueError("DBSCAN received an empty dataset.")
 
-        return anomalies
+        effective_neighbors = max(1, min(min_samples, n_samples))
+
+        nn = NearestNeighbors(n_neighbors=effective_neighbors)
+        nn.fit(data_dense)
+        distances, _ = nn.kneighbors(data_dense)
+
+        kth_distances = np.sort(distances[:, -1])
+        return float(np.quantile(kth_distances, quantile))
+
+    def kmeans_anomaly_detection(self, data, n_clusters=5, return_scores=False):
+        """
+        Uses k-means clustering to detect anomalies in the data.
+        Adapts cluster count for small live batches.
+        """
+        if hasattr(data, "toarray"):
+            data_dense = data.toarray()
+        else:
+            data_dense = np.asarray(data)
+
+        n_samples = len(data_dense)
+        if n_samples == 0:
+            raise ValueError("KMeans received an empty dataset.")
+        if n_samples == 1:
+            # With only one sample, return a neutral score/flag
+            if return_scores:
+                return np.zeros(1, dtype=float)
+            return np.zeros(1, dtype=int)
+
+        # Never request more clusters than samples
+        effective_clusters = min(n_clusters, n_samples)
+
+        kmeans = KMeans(n_clusters=effective_clusters, random_state=42).fit(data_dense)
+        distances = np.linalg.norm(
+            data_dense - kmeans.cluster_centers_[kmeans.labels_],
+            axis=1
+        )
+
+        if return_scores:
+            return distances
+        else:
+            anomalies, cutoff = self._score_to_flags(distances, 'kmeans')
+            return anomalies
     
-    def dbscan_anomaly_detection(self, data, eps=0.5, min_samples=5):
+    def dbscan_anomaly_detection(self, data, eps=None, min_samples=10, return_scores=False):
         """
         Uses DBSCAN clustering to detect anomalies in the data.
 
@@ -69,27 +146,58 @@ class AnomalyDetector:
         ----------
         data : array-like of shape (n_samples, n_features)
             The input data to detect anomalies from.
-        eps : float, optional (default=0.5)
-            The maximum distance between two samples for them to be considered 
-            as in the same neighborhood.
-        min_samples : int, optional (default=5)
-            The number of samples in a neighborhood for a point to be considered 
-            as a core point. This includes the point itself.
+        eps : float, optional (default=None)
+            The maximum distance between two samples in a cluster. If None, the optimal value is estimated.
+        min_samples : int, optional (default=10)
+            The minimum number of samples required to form a dense region.
+        return_scores : boolean, optional (default=False)
+            Whether to return anomaly scores or boolean indicators of anomalies.
 
         Returns
         -------
-        anomalies : array-like of shape (n_samples,)
-            A boolean array where True values indicate anomalies (noise points) 
-            and False values indicate normal data points.
+        If return_scores is False:
+            anomalies : array-like of shape (n_samples,)
+                A boolean array where True values indicate anomalies and False values indicate normal data points.
+        If return_scores is True:
+            scores : array-like of shape (n_samples,)
+                An array of anomaly scores for the input data.
         """
+        if hasattr(data, "toarray"):
+            data_dense = data.toarray()
+        else:
+            data_dense = np.asarray(data, dtype=np.float64)
 
-        dbscan = DBSCAN(eps=eps, min_samples=min_samples).fit(data)
+        n_samples = len(data_dense)
+        if n_samples == 0:
+            raise ValueError("DBSCAN received an empty dataset.")
 
-        anomalies = dbscan.labels_ == -1
+        # Tiny batches cannot support large min_samples
+        effective_min_samples = max(1, min(min_samples, n_samples))
 
-        return anomalies
+        if eps is None:
+            eps = self.estimate_dbscan_eps(
+                data_dense,
+                min_samples=effective_min_samples,
+                quantile=0.98
+            )
+
+        dbscan = DBSCAN(
+            eps=eps,
+            min_samples=effective_min_samples
+        ).fit(data_dense)
+
+        if return_scores:
+            if len(dbscan.components_) > 0:
+                nn = NearestNeighbors(n_neighbors=1).fit(dbscan.components_)
+                distances, _ = nn.kneighbors(data_dense)
+                scores = distances.ravel() / max(eps, 1e-9)
+            else:
+                scores = np.full(shape=data_dense.shape[0], fill_value=np.inf)
+            return scores
+        else:
+            return (dbscan.labels_ == -1).astype(int)
     
-    def autoencoder_anomaly_detection(self, data, encoding_dim = 128, threshold=0.5, force_retrain=False):
+    def autoencoder_anomaly_detection(self, data, encoding_dim=128, threshold=0.5, force_retrain=False, return_scores=False):
         """
         Uses an autoencoder to detect anomalies in the data.
 
@@ -105,18 +213,39 @@ class AnomalyDetector:
         threshold : float, optional (default=0.5)
             The percentile threshold for determining anomalies based on reconstruction 
             error. Data points with errors above this threshold are considered anomalies.
+        force_retrain : boolean, optional (default=False)
+            Whether to force retraining of the autoencoder.
+        return_scores : boolean, optional (default=False)
+            Whether to return anomaly scores or boolean indicators of anomalies.
 
         Returns
         -------
-        anomalies : array-like of shape (n_samples,)
-            A boolean array where True values indicate anomalies and False values 
-            indicate normal data points.
+        If return_scores is False:
+            anomalies : array-like of shape (n_samples,)
+                A boolean array where True values indicate anomalies and False values 
+                indicate normal data points.
+        If return_scores is True:
+            scores : array-like of shape (n_samples,)
+                An array of anomaly scores for the input data.
         """
-        # Convert sparse matrix to dense array
-        if isinstance(data, sparse.csr.csr_matrix):
+        # Convert supported sparse/pandas inputs into a dense float32 NumPy array
+        if sparse.issparse(data):
             data = data.toarray()
+        elif isinstance(data, pd.DataFrame):
+            # Handles both normal and pandas sparse DataFrames
+            data = data.to_numpy()
+        elif hasattr(data, "to_dense"):
+            # Handles pandas sparse structures that expose to_dense()
+            data = data.to_dense()
+            if hasattr(data, "to_numpy"):
+                data = data.to_numpy()
 
-        # Determine input dimension from data
+        data = np.asarray(data, dtype=np.float32)
+
+        # Safety check
+        if data.ndim != 2:
+            raise ValueError(f"Autoencoder expected 2D input, got shape {data.shape}")
+
         input_dim = data.shape[1]
 
         old_autoencoder = self.autoencoder
@@ -135,73 +264,96 @@ class AnomalyDetector:
 
             autoencoder.compile(optimizer='adam', loss='mse')
             autoencoder.fit(
-                data, 
-                data, 
-                epochs=20, 
-                batch_size=32, 
+                data,
+                data,
+                epochs=20,
+                batch_size=32,
                 verbose=1
             )
 
             self.autoencoder = autoencoder
         else:
             autoencoder = self.autoencoder
-            
-        recon = autoencoder.predict(data)
+
+        recon = autoencoder.predict(data, verbose=0)
         mse = ((data - recon) ** 2).mean(axis=1)
-        threshold = np.percentile(mse, 95)
-        anomalies = mse > threshold
 
-        return anomalies
+        if return_scores:
+            return mse
+        else:
+            anomalies, cutoff = self._score_to_flags(mse, 'autoencoder')
+            return anomalies
 
-    def hybrid_dtsvmnb_anomaly_detection(self, data, labels, threshold=0.5):
+    def hybrid_dtsvmnb_anomaly_detection(self, data, labels, return_scores=False):      
         """
-        Uses a hybrid approach combining a DecisionTreeClassifier, a Support Vector Machine (SVM), and a Multinomial Naive Bayes (NB) classifier to detect anomalies in the data.
-
-        The anomaly score for each data point is calculated by summing the mean probabilities predicted by each classifier. Data points with an anomaly score above a specified percentile 
-        threshold are labeled as anomalies.
+        Uses a hybrid approach combining DecisionTreeClassifier, SVC, and MultinomialNB to detect anomalies in the data.
 
         Parameters
         ----------
-        data : array-like or sparse matrix of shape (n_samples, n_features)
+        data : array-like of shape (n_samples, n_features)
             The input data to detect anomalies from.
         labels : array-like of shape (n_samples,)
-            The labels for the input data. Used for training the classifiers.
-        threshold : float, optional (default=0.5)
-            The percentile threshold for determining anomalies based on the anomaly score. Data points with an anomaly score above this threshold are considered anomalies.
+            The corresponding labels for the input data.
+        return_scores : boolean, optional (default=False)
+            Whether to return anomaly scores or boolean indicators of anomalies.
 
         Returns
         -------
-        anomalies : array-like of shape (n_samples,)
-            A boolean array where True values indicate anomalies and False values indicate normal data points.
+        If return_scores is False:
+            anomalies : array-like of shape (n_samples,)
+                A boolean array where True values indicate anomalies and False values indicate normal data points.
+        If return_scores is True:
+            scores : array-like of shape (n_samples,)
+                An array of anomaly scores for the input data.
         """
-        # Initialize classifiers
+        X = data
+        y = labels
+
+        if sparse.issparse(X):
+            X_dense = X.toarray()
+            X_nb = np.clip(X.toarray(), 0, None)
+        else:
+            X_dense = np.asarray(X)
+            X_nb = np.clip(X_dense, 0, None)
+
         dt = DecisionTreeClassifier(random_state=42)
-        svm = SVC(probability=True, kernel='linear', random_state=42)
+        svm = LinearSVC(random_state=42)
         nb = MultinomialNB()
 
-        # Train-test split
-        X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.2, random_state=42)
+        dt.fit(X_dense, y)
+        svm.fit(X, y)
+        nb.fit(X_nb, y)
 
-        # Fit models
-        dt.fit(X_train, y_train)
-        svm.fit(X_train, y_train)
-        nb.fit(X_train, y_train)
+        # Decision Tree score
+        dt_proba = dt.predict_proba(X_dense)
+        if dt_proba.ndim == 2 and dt_proba.shape[1] > 2:
+            dt_score = 1.0 - np.max(dt_proba, axis=1)
+        else:
+            dt_score = dt_proba[:, 1] if dt_proba.shape[1] == 2 else dt_proba.ravel()
 
-        # Predict probabilities
-        dt_pred = dt.predict_proba(X_test)
-        svm_pred = svm.predict_proba(X_test)
-        nb_pred = nb.predict_proba(X_test)
+        # LinearSVC score
+        svm_raw = svm.decision_function(X)
+        if svm_raw.ndim == 2:
+            svm_score = 1.0 - (
+                np.max(svm_raw, axis=1) - np.min(svm_raw, axis=1)
+            ) / (np.ptp(svm_raw, axis=1) + 1e-9)
+        else:
+            svm_score = (svm_raw - svm_raw.min()) / (svm_raw.max() - svm_raw.min() + 1e-9)
 
-        # Calculate anomaly score
-        anomaly_score = np.mean(dt_pred, axis=1) + np.mean(svm_pred, axis=1) + np.mean(nb_pred, axis=1)
+        # Naive Bayes score
+        nb_proba = nb.predict_proba(X_nb)
+        if nb_proba.ndim == 2 and nb_proba.shape[1] > 2:
+            nb_score = 1.0 - np.max(nb_proba, axis=1)
+        else:
+            nb_score = nb_proba[:, 1] if nb_proba.shape[1] == 2 else nb_proba.ravel()
 
-        # Set threshold
-        threshold = np.percentile(anomaly_score, 95)
+        anomaly_score = (dt_score + svm_score + nb_score) / 3.0
 
-        # Detect anomalies
-        anomalies = anomaly_score > threshold
-
-        return anomalies
+        if return_scores:
+            return anomaly_score
+        else:
+            anomalies, cutoff = self._score_to_flags(anomaly_score, 'hybrid')
+            return anomalies
     
     def cache_suspect_features(self, feature_name, features, suspect_idx):
         """

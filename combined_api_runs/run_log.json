@@ -1,0 +1,114 @@
+[
+  {
+    "query": "wildfire",
+    "offset": 0,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "wildfire",
+    "offset": 40,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "wildfire",
+    "offset": 80,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "wildfire",
+    "offset": 120,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "forest fire",
+    "offset": 0,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "forest fire",
+    "offset": 40,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "forest fire",
+    "offset": 80,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "forest fire",
+    "offset": 120,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "brush fire",
+    "offset": 0,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "brush fire",
+    "offset": 40,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "brush fire",
+    "offset": 80,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "brush fire",
+    "offset": 120,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "evacuation order",
+    "offset": 0,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "evacuation order",
+    "offset": 40,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "evacuation order",
+    "offset": 80,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  },
+  {
+    "query": "evacuation order",
+    "offset": 120,
+    "status": "ok",
+    "merged_path_raw": null,
+    "merged_path_resolved": "C:\\Backup\\Dimitris\\Lulea\\Thesis\\Project\\merged_data_results.csv"
+  }
+]

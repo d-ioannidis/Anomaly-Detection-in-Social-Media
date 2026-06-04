@@ -1,17 +1,19 @@
 from PipelineManager import PipelineManager
 
 config = {
-    "data_source": "DisasterTweets.csv"
+    "data_source": "DisasterTweets.csv",
+    "output_dir": "runtime_results/manual_run"
 }
 pipeline = PipelineManager(config)
 
-verification = pipeline.run()
+results = pipeline.run()
 
 # Retrieve the fact-check results
-if hasattr(pipeline, 'fact-checker'):
-    results = pipeline.fact_checker.load_fact_check_results()
-    print("Loaded fact-check results:", results)
-
+if hasattr(pipeline, 'fact_checker'):
+    fact_check_results = pipeline.fact_checker.load_fact_check_results()
+    print("Loaded fact-check results:", fact_check_results)
+    
 print("Verification results:")
-for model in verification:
-    print(model, verification[model])
+if results and 'anomaly_results' in results:
+    for model in results['anomaly_results']:
+        print(model, results['anomaly_results'][model])

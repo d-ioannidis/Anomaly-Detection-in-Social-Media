@@ -2,7 +2,7 @@ from Data_Collector import DataCollector
 from NLP_Engine import NLPEngine
 import spacy
 from nltk.stem import *
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 import pandas as pd
 from transformers import BertTokenizer, BertModel
 import torch
@@ -32,14 +32,17 @@ class DataPreprocessor:
 
     def convert_to_numeric(self, x):
         """
-        Converts a string representation of a number with 'K' or 'M' suffix into a numeric value.
-        
-        Parameters:
-        x (str): The string representation of the number to be converted.
-        
-        Returns:
-        float: The numeric value of the input string.
+        Converts a string representation of a number with 'K' or 'M' suffix
+        into a numeric value. Also safely handles already-numeric inputs.
         """
+        if pd.isna(x):
+            return 0.0
+
+        if isinstance(x, (int, float, np.integer, np.floating)):
+            return float(x)
+
+        x = str(x).strip()
+
         if 'K' in x:
             return float(x.replace('K', '')) * 1000
         elif 'M' in x:
@@ -128,6 +131,9 @@ class DataPreprocessor:
             lambda x: x[0]['score'] if x else None
         )
 
+        # Remove exact duplicate tweets after normalization
+        self.data = self.data.drop_duplicates(subset=['Tweets']).reset_index(drop=True)
+
         return self
     
     def one_hot_encode(self):
@@ -213,19 +219,83 @@ class DataPreprocessor:
     
     def calculate_term_frequency_inverse_document_frequency_matrix(self):
         """
-        Calculates the term-frequency-inverse document-frequency matrix using the preprocessed data.
-        
-        Returns:
-        TermFrequencyInverseDocumentFrequencyMatrix: The term-frequency-inverse document-frequency matrix.
+        Calculates the TF-IDF matrix using the preprocessed token strings.
+        Adapts min_df/max_df for small live batches.
         """
-        
         self.data['Token_String'] = self.data['Tokens'].apply(lambda toks: " ".join(toks))
 
-        vectorizer = CountVectorizer()
+        n_docs = len(self.data)
+
+        # Safer settings for small API batches
+        if n_docs < 5:
+            min_df = 1
+            max_df = 1.0
+        else:
+            min_df = 2
+            max_df = 0.95
+
+        vectorizer = TfidfVectorizer(
+            max_df=max_df,
+            min_df=min_df,
+            sublinear_tf=True,
+            ngram_range=(1, 2)
+        )
+
         tfidf_matrix = vectorizer.fit_transform(self.data['Token_String'])
 
-        tfidf_df = pd.DataFrame(tfidf_matrix.toarray(),
-                                index=self.data.index,
-                                columns=vectorizer.get_feature_names_out())
+        tfidf_df = pd.DataFrame.sparse.from_spmatrix(
+            tfidf_matrix,
+            index=self.data.index,
+            columns=vectorizer.get_feature_names_out()
+        )
 
         return tfidf_df
+    
+    def print_results(self):
+        """
+        Prints a comprehensive summary of the preprocessing results, including key metrics
+        and dimensions of the transformed data. This output is designed to be used directly
+        in the 'Results' section of the thesis.
+        """
+        # 1. Basic Data Shape
+        original_shape = self.data_collector.data.shape
+        processed_shape = self.data.shape
+        print(f"1. DATA VOLUME:")
+        print(f"   - Original dataset dimensions: {original_shape[0]} rows, {original_shape[1]} columns")
+        print(f"   - Processed dataset dimensions: {processed_shape[0]} rows, {processed_shape[1]} columns (after adding new features)\n")
+
+        # 2. Text Cleaning Efficacy (Example: Calculate avg. tweet length before and after)
+        # Assuming 'Tweets' is the cleaned text and 'Original Tweets' is the raw text
+        avg_chars_before = self.data['Original Tweets'].str.len().mean()
+        avg_chars_after = self.data['Tweets'].str.len().mean()
+        chars_removed_pct = ((avg_chars_before - avg_chars_after) / avg_chars_before) * 100
+
+        avg_tokens = self.data['Tokens'].apply(len).mean()
+
+        print(f"2. TEXT CLEANING EFFICACY:")
+        print(f"   - Avg. characters per tweet (raw): {avg_chars_before:.2f}")
+        print(f"   - Avg. characters per tweet (cleaned): {avg_chars_after:.2f}")
+        print(f"   - Estimated noise removed: {chars_removed_pct:.2f}% of characters")
+        print(f"   - Avg. tokens per tweet (after stopword removal): {avg_tokens:.2f}\n")
+
+        # 3. Feature Extraction Outputs
+        # Calculate DTM/TF-IDF dimensions
+        dtm = self.calculate_document_term_matrix()
+        tfidf_df = self.calculate_term_frequency_inverse_document_frequency_matrix()
+        vocab_size = tfidf_df.shape[1] # Number of columns in TF-IDF matrix is the vocabulary size
+
+        # Get BERT Embeddings shape
+        bert_embeddings = self.bert_tokenize()
+        
+        print(f"3. FEATURE EXTRACTION OUTPUTS:")
+        print(f"   - Document-Term Matrix (DTM) dimensions: {dtm.shape}")
+        print(f"   - TF-IDF Matrix dimensions: {tfidf_df.shape}")
+        print(f"   - Vocabulary size (n_features_tfidf): {vocab_size}")
+        print(f"   - BERT Embeddings matrix dimensions: {bert_embeddings.shape}\n")
+
+        # 4. Sentiment/Emotion Distribution (Top-level counts)
+        print(f"4. SENTIMENT/EMOTION DISTRIBUTION (Preview):")
+        print(f"   - Sentiment Label counts:")
+        print(self.data['Sentiment_Label'].value_counts().to_string())
+        print(f"\n   - Emotion Label counts:")
+        print(self.data['Emotion_Labels'].value_counts().to_string())
